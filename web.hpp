@@ -1,8 +1,6 @@
 #pragma once
 
 constexpr auto WebPage =  std::string_view( R"html(
-
-
 <!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta charset='utf-8'><title>Hladinoměr</title>
@@ -11,21 +9,39 @@ constexpr auto WebPage =  std::string_view( R"html(
 body {
     margin: 0;
     padding: 0;
+    background-color: #1e1c2c;
+}
+
+body, input, button {
+    font-family:sans-serif;
+    color: #fbf4e5;
+    
+}
+
+input {
+    border-width: 1px;
+    background-color: black;
+    font-size: 1.1rem;
+}
+
+button,input[type=submit] {
+    background-color: #6f688a;
+    font-size: 1.1rem;
 }
 
 h1 {text-align:center;}
 
 .form {
-    position:relative;    
-    max-width: 14rem;
+    position:relative;
+    max-width: 18rem;
     margin:auto;
 }
 
 table.hl {
     width: 100%;
     font-size: 1.7rem;
-    max-width: 15rem;
-    margin: auto;    
+    max-width: 18rem;
+    margin: auto;
 }
 
 table.hl th {text-align:right;}
@@ -39,7 +55,7 @@ table.scan {
 }
 
 table.scan th {
-    background-color: #ccc;
+    background-color: #000;
     padding: 0.2rem;
     border-right: 1px dotted;
 }
@@ -53,11 +69,12 @@ table.scan td {
     display:flex;
     position: relative;
     margin: 0.2rem;
+    justify-content: space-between;
 }
 
 .form label > span {
-    width:40%;
-    flex-grow: 1;
+    width: 44%;
+    flex-grow: 0;
 }
 .form label > *:last-child {
     flex-grow:1;
@@ -177,9 +194,31 @@ function savecfg() {
     } else {
         alert("Nevyplněné políčko");
     }
-    
-    
 }
+
+function savewifi() {
+    const ssid = all("ssid").value
+    const pass = all("pass").value;
+    if (ssid.length> 0) {
+        const f = new FormData();
+        f.set("ssid", ssid);
+        f.set("pass", pass);
+        fetch("/savewifi", {
+            "method":"POST",
+            "body": f
+        }).then(x=>{
+            if (x.status == 202) {
+                alert("Nastavení uloženo");
+            } else {
+                alert("Chyba při ukládání");
+            }
+        })
+    } else {
+        alert("Nevyplněné políčko");
+    }
+}
+
+
 
 </script>
 <body onload="start()">
@@ -206,15 +245,13 @@ function savecfg() {
         <input type="checkbox" onchange="doScan.call(this)"> Nastavení WiFi
     </label>
     <div hidden="hidden" class="form">
-        <form method="POST" action="/savewifi">
             <label><span>SSID:</span>
-                <input name="ssid" type="text"  id="ssid">            
+                <input type="text"  id="ssid">            
             </label>
             <label><span>Heslo:</span>
-                <input name="pass" type="text" id="pass">            
+                <input type="text" id="pass">            
             </label>
-                <div class="buttons"><input type="submit" value="Nastavit"></div>
-        </form>
+                <div class="buttons"><button onclick="savewifi()">Nastavit</button></div>
         <table class="scan">
             <thead>
                 <tr><th>SSID</th><th>Signal</th></tr>

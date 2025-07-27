@@ -4,10 +4,17 @@
 #include <SoftwareSerial.h>
 #include <U8g2lib.h>
 #include <string>
+#include <EEPROM.h>
 #include "web.hpp"
 #include "utils.hpp"
 
 
+struct Configuration {
+    int version = 1;
+    int zero_point = 5010;
+    int trend_secs = 300;
+};
+constexpr int EEPROM_SIZE = sizeof(Configuration);  // Např. 8 bajtů
 
 U8G2_ST7567_OS12864_F_4W_SW_SPI display(U8G2_R2,D3,D5,D1,D2,D0);
 ESP8266WebServer server(80); // Port 80 = HTTP
@@ -66,7 +73,7 @@ void handleSaveWifi() {
     String pass = server.arg("pass");
 
     if (ssid.length() > 0) {
-        server.send(200, "text/html;charset=utf-8", "<html><body><h2>Nastavení uloženo. Zařízení se restartuje...</h2></body></html>");
+        server.send(202, "text/plain", "Accepted");
         auto stop = millis()+1000;
         while (millis()<stop) server.handleClient();
 
@@ -77,7 +84,25 @@ void handleSaveWifi() {
         delay(1000);                      // Nechme odeslat odpověď
         ESP.restart();                    // Restart zařízení
     } else {
-        server.send(400, "text/html;charset=utf-8", "<html><body><h2>SSID chybí</h2></body></html>");
+        server.send(400, "text/plain","");
+    }
+}
+
+
+void saveConfigToEEPROM() {
+    EEPROM.begin(EEPROM_SIZE);  // Inicializace
+    EEPROM.put(0, conf);      // Uložení struktury na adresu 0
+    EEPROM.commit();            // Zápis do flash
+    EEPROM.end();               // Ukončení
+}
+
+void loadConfigFromEEPROM() {
+    Configuration cfg;
+    EEPROM.begin(EEPROM_SIZE);
+    EEPROM.get(0, cfg);      // Načtení struktury z EEPROM
+    EEPROM.end();
+    if (cfg.version == conf.version) {
+      conf = cfg;
     }
 }
 
@@ -94,6 +119,7 @@ void handleConfigSave() {
             conf.zero_point = zpt;
             conf.trend_secs = tsec;
             trendCalc.reset();
+            saveConfigToEEPROM();
             server.send(202,"text/plain","Accepted");
             return;
         }
@@ -101,13 +127,12 @@ void handleConfigSave() {
     server.send(400,"text/plain","Bad request");
 }
 
-
-
 void setup()
 {
   Serial.begin(115200);
   cidlo.begin();
   display.begin();
+  loadConfigFromEEPROM();
 
 
  WiFi.mode(WIFI_STA);
@@ -170,27 +195,61 @@ void tryReconnect() {
     Serial.println("Zatím žádná známá síť v dosahu.");
 }
 
+void drawSignalTriangle(int level) {
+    const int x = 120; // pravý horní roh
+    const int y = 0;
+
+    const int w = 8;   // šířka symbolu
+    const int h = 8;   // výška symbolu
+
+    for (int i = 0; i < level; i++) {
+      int bx = x + i * 2;
+      int by = y + h - i * 2;
+      int bh = i * 2 + 2;
+      display.drawBox(bx, by, 2, bh);
+    }
+    display.drawLine(x-1, h+2, x+w, h+2);
+}
+
 void updateDisplay() {    
     display.clearBuffer();
     display.setFont(u8g2_font_logisoso32_tf);
     char buff[20];
-    int val = getLevel()/10;
-    if (val < 0) snprintf(buff,20,"< 0");
-    else snprintf(buff, 20, "%d.%02d", val/100, val % 100);
+    int val = getLevel();
+    snprintf(buff, 20, "%.2f", val*0.001);
     int w = display.getStrWidth(buff);
-    display.drawStr(90-w, 64, buff);
+    display.drawStr(85-w, 64, buff);
 
     display.setFont(u8g2_font_logisoso16_tf);
-    display.drawStr(90, 64, "m");
-    display.setFont(u8g2_font_6x13_tf);
+    display.drawStr(85, 64, "m");
+    display.setFont(u8g2_font_6x12_tf);
     if (ap_mode) {
-        display.drawStr(0,13,std::string(apName).c_str());
-        display.drawStr(0,26,WiFi.softAPIP().toString().c_str());
+        display.drawStr(0,12,std::string(apName).c_str());
+        display.drawStr(0,24,WiFi.softAPIP().toString().c_str());
 
     } else {        
-        display.drawStr(0,13,WiFi.SSID().c_str());
-        display.drawStr(0,26,WiFi.localIP().toString().c_str());
+        display.drawStr(0,12,WiFi.SSID().c_str());
+        display.drawStr(0,24,WiFi.localIP().toString().c_str());
+        int rssi = WiFi.RSSI();
+        int level = map(rssi, -90, -30, 0, 4); // mapujeme sílu z -90 až -30 dBm na 0-4
+        level = constrain(level, 0, 4);        // zajistíme rozsah 0–4
+        drawSignalTriangle(level);
     }
+
+    int trend = getTrend();
+    if (trend > 100 || trend < -100) {
+        display.setFont(u8g2_font_open_iconic_arrow_2x_t);
+        display.drawStr(108,64,trend<0?"\x50":"\x53");
+        display.setFont(u8g2_font_6x13_tf);
+    }
+    snprintf(buff, 20, "%.2f", trend*0.001);
+    display.setFont(u8g2_font_6x13_tf);
+    w = display.getStrWidth(buff);
+    display.drawStr(128-w, 44, buff);
+    
+
+
+
 
     display.sendBuffer();
     display.setContrast(0);

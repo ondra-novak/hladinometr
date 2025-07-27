@@ -44,10 +44,7 @@ protected:
     int nx = -1;
 };
 
-struct Configuration {
-    int zero_point = 5010;
-    int trend_secs = 300;
-};
+
 
 class CidloRead {
 public:
