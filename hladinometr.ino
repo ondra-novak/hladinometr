@@ -1,216 +1,39 @@
 #include <ESP8266WiFi.h>
 #include <ESP8266WebServer.h>
 #include <DNSServer.h>
-#include <ESP8266WiFiMulti.h>
+#include <SoftwareSerial.h>
+#include <U8g2lib.h>
 #include <string>
+#include "web.hpp"
+#include "utils.hpp"
 
+
+
+U8G2_ST7567_OS12864_F_4W_SW_SPI display(U8G2_R2,D3,D5,D1,D2,D0);
 ESP8266WebServer server(80); // Port 80 = HTTP
 DNSServer dns;
+String  origin_ssid;
+unsigned long next_tick = 0;
+unsigned int error_ticks = 0;
+bool ap_mode = false;
+CidloRead cidlo(D6, D7);
+TrendCalc<1024> trendCalc;
+Configuration conf = {};
+constexpr auto apName = std::string_view ("Hladinomer_AP");
 
-constexpr std::string_view WebPage = R"html(
-<!DOCTYPE html><html><head>
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<meta charset='utf-8'><title>Hladinoměr</title>
-</head>
-<style>
-body {
-    margin: 0;
-    padding: 0;
+
+int getLevel() {
+    return conf.zero_point - cidlo.get_value();
 }
 
-h1 {text-align:center;}
-
-.form {
-    position:relative;    
-    max-width: 14rem;
-    margin:auto;
-}
-
-table.hl {
-    width: 100%;
-    font-size: 1.7rem;
-    max-width: 15rem;
-    margin: auto;    
-}
-
-table.hl th {text-align:right;}
-table.hl td:nth-child(2) {text-align:right;}
-    
-table.scan {
-    border: 1px solid;
-    border-collapse: collapse;
-    margin-top: 1rem;
-    width: 100%;    
-}
-
-table.scan th {
-    background-color: #ccc;
-    padding: 0.2rem;
-    border-right: 1px dotted;
-}
-
-table.scan td {
-    padding: 0.2rem;
-    border-right: 1px dotted;
-}
-
-.form label {
-    display:flex;
-    position: relative;
-    margin: 0.2rem;
-}
-
-.form label > span {
-    width:40%;
-}
-.form label > *:last-child {
-    flex-grow:1;
-    flex-shrink:1;
-}
-
-input[type=number] {
-    width: 5rem;
-    text-align: center;
-}
-input[type=text] {
-    text-align:center;
-    width: 5rem;
-}
-.form .buttons {
-    text-align:right;
-}
-table.scan tr {
-    cursor: pointer;
-}
-table.scan tr td:last-child {
-    text-align:right;
-}
-    
-</style>
-<script type="text/javascript">
-
-
-function fetchData() {
-    fetch("/data").then(x=>x.json()).then(data=>{
-        var hladina = document.getElementById("hladina");
-        var trend = document.getElementById("trend");
-        hladina.textContent = data.level;
-        trend.textContent = data.trend;
-    });
-    setTimeout(fetchData,1000);
-}
-
-function start() {
-    setTimeout(fetchData,1000);
-}
-
-function showhide() {
-    const p = this.parentElement;
-    const nx1 = p.nextElementSibling;
-    nx1.hidden = !nx1.hidden;
-    
-}
-
-function doScan() {
-    const p = this.parentElement;
-    const nx1 = p.nextElementSibling;
-    nx1.hidden = !nx1.hidden;
-    if (!nx1.hidden) {
-
-        function runScan() {
-            if (nx1.hidden) return ;
-            fetch("/scan").then(x=>x.json())
-                .then(data=>{
-                    if (data.length == 0) return;
-                    let sr = document.getElementById("scan_result");
-                    sr.innerHTML="";
-                    data.sort((a,b)=>b.RSSI - a.RSSI).forEach(x=>{
-                        let r = document.createElement("tr");
-                        let d1 = document.createElement("td");
-                        let d2 = document.createElement("td");
-                        let perc =  2 * (x.RSSI + 100);
-                        if (perc > 100) perc = 100;
-                        if (perc < 1) perc = 1;
-                        
-                        d1.textContent = x.SSID;
-                        d2.textContent = perc+" %";
-                        r.appendChild(d1);
-                        r.appendChild(d2);
-                        sr.appendChild(r);
-                        r.onclick = ()=>{
-                            document.getElementById("ssid").value = x.SSID;
-                        };
-                    });
-                    setTimeout(runScan,5000);
-                });
-            
-        }
-
-        runScan();
-    }
-}
-
-
-</script>
-<body onload="start()">
-<h1>Hladinoměr</h1>
-<table class="hl">
-<tr><th>Hladina:</th><td id="hladina"></td><td>cm</td></tr>
-<tr><th>Trend:</th><td id="trend"></td><td>cm/h</td></tr>
-</table>
-<hr>
-    <label>
-        <input type="checkbox" onchange="showhide.call(this)"> Kalibrace
-    </label>
-    <div hidden="hidden" class="form">
-        <label><span>Nulový bod</span>
-            <input type="number" id="nullpoint">
-        </label>
-        <div class="buttons"><button>Nastavit</button></div>
-    </div>            
-<hr>
-    <label>
-        <input type="checkbox" onchange="doScan.call(this)"> Nastav WiFi
-    </label>
-    <div hidden="hidden" class="form">
-        <form method="POST" action="/savewifi">
-            <label><span>SSID:</span>
-                <input name="ssid" type="text"  id="ssid">            
-            </label>
-            <label><span>Heslo:</span>
-                <input name="pass" type="text" id="pass">            
-            </label>
-                <div class="buttons"><input type="submit" value="Nastavit"></div>
-        </form>
-        <table class="scan">
-            <thead>
-                <tr><th>SSID</th><th>Signal</th></tr>
-            </thead>
-            <tbody id="scan_result">
-                <tr>
-                    <td colspan="2">(Vyhledávám sítě)</td>
-                </tr>
-            </tbody>
-        </table>
-    </div>            
-</body>
-</html>
-)html";
-
-
-float getLevel() {
-  // Např. čtení z čidla
-  return 123.4;
-}
-
-float getTrend() {
-  // Např. výpočet trendu
-  return -0.5;
+int getTrend() {    
+    float t1 = trendCalc.slope(conf.trend_secs);    
+    return static_cast<int>(t1 * 3600); 
 }
 
 void handleRoot() {
 
-  server.send(200, "text/html",WebPage.data(), WebPage.size());
+    server.send(200, "text/html",WebPage.data(), WebPage.size());
 }
 
 void handleData() {
@@ -258,16 +81,34 @@ void handleSaveWifi() {
     }
 }
 
-String  origin_ssid;
-unsigned long next_tick = 0;
-unsigned int error_ticks = 0;
-bool ap_mode = false;
+void handleConfigGet() {
+    server.send(200,"application/json","{\"zeropt\":"+String(conf.zero_point)+",\"trend_sec\":"+String(conf.trend_secs)+"}");
+}
+void handleConfigSave() {
+    String zeropt = server.arg("zeropt");
+    String trendsec = server.arg("trend_sec");
+    if (zeropt.length() > 0 && trendsec.length() > 0) {
+        int zpt = zeropt.toInt();
+        int tsec = trendsec.toInt();
+        if (zpt > 0 && tsec > 0) {
+            conf.zero_point = zpt;
+            conf.trend_secs = tsec;
+            trendCalc.reset();
+            server.send(202,"text/plain","Accepted");
+            return;
+        }
+    } 
+    server.send(400,"text/plain","Bad request");
+}
+
 
 
 void setup()
 {
   Serial.begin(115200);
-  Serial.println();
+  cidlo.begin();
+  display.begin();
+
 
  WiFi.mode(WIFI_STA);
 //  WiFi.persistent(true);
@@ -280,13 +121,16 @@ void setup()
   server.on("/generate_204", handleCaptivePortalRequest);
   server.on("/hotspot-detect.html", handleCaptivePortalRequest);
   server.on("/savewifi",HTTP_POST, handleSaveWifi);
+  server.on("/config", HTTP_GET, handleConfigGet);
+  server.on("/config", HTTP_POST, handleConfigSave);
   server.begin();  
+  next_tick = millis()+3000;
 }
 
 void startCaptivePortal() {
   ap_mode = true;
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("Hladinometr_AP");
+  WiFi.softAP(std::string(apName).c_str());
   IPAddress IP = WiFi.softAPIP();
   Serial.print("AP IP adresa: ");
   Serial.println(IP);
@@ -326,25 +170,59 @@ void tryReconnect() {
     Serial.println("Zatím žádná známá síť v dosahu.");
 }
 
+void updateDisplay() {    
+    display.clearBuffer();
+    display.setFont(u8g2_font_logisoso32_tf);
+    char buff[20];
+    int val = getLevel()/10;
+    if (val < 0) snprintf(buff,20,"< 0");
+    else snprintf(buff, 20, "%d.%02d", val/100, val % 100);
+    int w = display.getStrWidth(buff);
+    display.drawStr(90-w, 64, buff);
+
+    display.setFont(u8g2_font_logisoso16_tf);
+    display.drawStr(90, 64, "m");
+    display.setFont(u8g2_font_6x13_tf);
+    if (ap_mode) {
+        display.drawStr(0,13,std::string(apName).c_str());
+        display.drawStr(0,26,WiFi.softAPIP().toString().c_str());
+
+    } else {        
+        display.drawStr(0,13,WiFi.SSID().c_str());
+        display.drawStr(0,26,WiFi.localIP().toString().c_str());
+    }
+
+    display.sendBuffer();
+    display.setContrast(0);
+
+}
+
 void loop() {
    dns.processNextRequest();
    server.handleClient();
+   cidlo.read();
+
   if (millis()>next_tick) {
+
+    int v = conf.zero_point - cidlo.get_value();
+    trendCalc.add(v);
+
     next_tick = millis() + 1000;
     int status = WiFi.status();
     if (status == WL_CONNECTED) {
-      error_ticks = 0;
+        error_ticks = 0;
     } else {
-      ++error_ticks;
-      if (error_ticks > 10) {
-          error_ticks = 0;
-          if (!ap_mode) {
-              startCaptivePortal();
-          } else {
-              tryReconnect();
+        ++error_ticks;
+        if (error_ticks > 10) {
+            Serial.println(error_ticks);
+            error_ticks = 0;
+              if (!ap_mode) {
+                startCaptivePortal();
+            } else {
+                tryReconnect();
+            }
         }
-      }
     }
-    Serial.printf("Connection status: %d, IP %s\n", WiFi.status(), WiFi.localIP().toString().c_str());
+    updateDisplay();
   }
 }
