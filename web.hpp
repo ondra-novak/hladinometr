@@ -1,6 +1,7 @@
 #pragma once
 
 constexpr auto WebPage =  std::string_view( R"html(
+
 <!DOCTYPE html><html><head>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta charset='utf-8'><title>Hladinoměr</title>
@@ -30,6 +31,10 @@ button,input[type=submit] {
 }
 
 h1 {text-align:center;}
+
+.raw {
+    font-size:0.8rem;
+}
 
 .form {
     position:relative;
@@ -113,8 +118,10 @@ function fetchData() {
     fetch("/data").then(x=>x.json()).then(data=>{
         var hladina = all("hladina");
         var trend = all("trend");
+        var raw = all("raw");
         hladina.textContent = (data.level*0.001).toFixed(2);
         trend.textContent = (data.trend*0.001).toFixed(2);
+        raw.textContent = data.raw;
     });
     setTimeout(fetchData,1000);
 }
@@ -226,6 +233,7 @@ function savewifi() {
 <table class="hl">
 <tr><th>Hladina:</th><td id="hladina"></td><td>m</td></tr>
 <tr><th>Trend:</th><td id="trend"></td><td>m/h</td></tr>
+<tr th class="raw"><th>(raw):</th><td id="raw"></td><td></td></tr>
 </table>
 <hr>
     <label>

@@ -33,6 +33,10 @@ int getLevel() {
     return conf.zero_point - cidlo.get_value();
 }
 
+int getRaw() {
+    return cidlo.get_value();
+}
+
 int getTrend() {    
     float t1 = trendCalc.slope(conf.trend_secs);    
     return static_cast<int>(t1 * 3600); 
@@ -44,7 +48,7 @@ void handleRoot() {
 }
 
 void handleData() {
-  server.send(200, "application/json", "{\"level\": " + String(getLevel()) + ", \"trend\": " + String(getTrend())+"}");
+  server.send(200, "application/json", "{\"level\": " + String(getLevel()) + ", \"trend\": " + String(getTrend())+", \"raw\": " + String(getRaw())+"}");
 }
 
 void handleScanWifi() {
