@@ -13,10 +13,11 @@ struct Configuration {
     int version = 1;
     int zero_point = 5010;
     int trend_secs = 300;
+    int flip = 0;
 };
 constexpr int EEPROM_SIZE = sizeof(Configuration);  // Např. 8 bajtů
 
-U8G2_ST7567_OS12864_F_4W_SW_SPI display(U8G2_R2,D3,D5,D1,D2,D0);
+std::optional<U8G2_ST7567_OS12864_F_4W_SW_SPI> display;
 ESP8266WebServer server(80); // Port 80 = HTTP
 DNSServer dns;
 String  origin_ssid;
@@ -28,6 +29,11 @@ TrendCalc<1024> trendCalc;
 Configuration conf = {};
 constexpr auto apName = std::string_view ("Hladinomer_AP");
 
+void setupDisplay() {  
+  display.reset();
+  display.emplace(conf.flip?U8G2_R0:U8G2_R2,D3,D5,D1,D2,D0);
+  display->begin();
+}
 
 int getLevel() {
     return conf.zero_point - cidlo.get_value();
@@ -111,20 +117,24 @@ void loadConfigFromEEPROM() {
 }
 
 void handleConfigGet() {
-    server.send(200,"application/json","{\"zeropt\":"+String(conf.zero_point)+",\"trend_sec\":"+String(conf.trend_secs)+"}");
+    server.send(200,"application/json","{\"zeropt\":"+String(conf.zero_point)+",\"trend_sec\":"+String(conf.trend_secs)+",\"flip\":"+(conf.flip?"true":"false")+"}");
 }
 void handleConfigSave() {
     String zeropt = server.arg("zeropt");
     String trendsec = server.arg("trend_sec");
-    if (zeropt.length() > 0 && trendsec.length() > 0) {
+    String flip = server.arg("flip");
+    if (zeropt.length() > 0 && trendsec.length() > 0 && flip.length()>0) {
         int zpt = zeropt.toInt();
         int tsec = trendsec.toInt();
+        int iflip = flip.toInt();
         if (zpt > 0 && tsec > 0) {
             conf.zero_point = zpt;
             conf.trend_secs = tsec;
+            conf.flip = iflip;
             trendCalc.reset();
             saveConfigToEEPROM();
             server.send(202,"text/plain","Accepted");
+            setupDisplay();
             return;
         }
     } 
@@ -134,9 +144,9 @@ void handleConfigSave() {
 void setup()
 {
   Serial.begin(115200);
-  cidlo.begin();
-  display.begin();
+  cidlo.begin();  
   loadConfigFromEEPROM();
+  setupDisplay();
 
 
  WiFi.mode(WIFI_STA);
@@ -210,30 +220,30 @@ void drawSignalTriangle(int level) {
       int bx = x + i * 2;
       int by = y + h - i * 2;
       int bh = i * 2 + 2;
-      display.drawBox(bx, by, 2, bh);
+      display->drawBox(bx, by, 2, bh);
     }
-    display.drawLine(x-1, h+2, x+w, h+2);
+    display->drawLine(x-1, h+2, x+w, h+2);
 }
 
 void updateDisplay() {    
-    display.clearBuffer();
-    display.setFont(u8g2_font_logisoso32_tf);
+    display->clearBuffer();
+    display->setFont(u8g2_font_logisoso32_tf);
     char buff[20];
     int val = getLevel();
     snprintf(buff, 20, "%.2f", val*0.001);
-    int w = display.getStrWidth(buff);
-    display.drawStr(85-w, 64, buff);
+    int w = display->getStrWidth(buff);
+    display->drawStr(85-w, 64, buff);
 
-    display.setFont(u8g2_font_logisoso16_tf);
-    display.drawStr(85, 64, "m");
-    display.setFont(u8g2_font_6x12_tf);
+    display->setFont(u8g2_font_logisoso16_tf);
+    display->drawStr(85, 64, "m");
+    display->setFont(u8g2_font_6x12_tf);
     if (ap_mode) {
-        display.drawStr(0,12,std::string(apName).c_str());
-        display.drawStr(0,24,WiFi.softAPIP().toString().c_str());
+        display->drawStr(0,12,std::string(apName).c_str());
+        display->drawStr(0,24,WiFi.softAPIP().toString().c_str());
 
     } else {        
-        display.drawStr(0,12,WiFi.SSID().c_str());
-        display.drawStr(0,24,WiFi.localIP().toString().c_str());
+        display->drawStr(0,12,WiFi.SSID().c_str());
+        display->drawStr(0,24,WiFi.localIP().toString().c_str());
         int rssi = WiFi.RSSI();
         int level = map(rssi, -90, -30, 0, 4); // mapujeme sílu z -90 až -30 dBm na 0-4
         level = constrain(level, 0, 4);        // zajistíme rozsah 0–4
@@ -242,21 +252,21 @@ void updateDisplay() {
 
     int trend = getTrend();
     if (trend > 100 || trend < -100) {
-        display.setFont(u8g2_font_open_iconic_arrow_2x_t);
-        display.drawStr(108,64,trend<0?"\x50":"\x53");
-        display.setFont(u8g2_font_6x13_tf);
+        display->setFont(u8g2_font_open_iconic_arrow_2x_t);
+        display->drawStr(108,64,trend<0?"\x50":"\x53");
+        display->setFont(u8g2_font_6x13_tf);
     }
     snprintf(buff, 20, "%.2f", trend*0.001);
-    display.setFont(u8g2_font_6x13_tf);
-    w = display.getStrWidth(buff);
-    display.drawStr(128-w, 44, buff);
+    display->setFont(u8g2_font_6x13_tf);
+    w = display->getStrWidth(buff);
+    display->drawStr(128-w, 44, buff);
     
 
 
 
 
-    display.sendBuffer();
-    display.setContrast(0);
+    display->sendBuffer();
+    display->setContrast(0);
 
 }
 

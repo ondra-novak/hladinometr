@@ -109,6 +109,7 @@ table.scan tr td:last-child {
     
 </style>
 <script type="text/javascript">
+"use strict";
 
 function all(name) {
     return document.getElementById(name);
@@ -137,6 +138,7 @@ function doConfigShow() {
     fetch("/config").then(x=>x.json()).then(data=>{
         all("nullpoint").value = data.zeropt*0.1;
         all("trendsec").value = data.trend_sec;        
+        all("flip").checked = data.flip;
     });
     
 }
@@ -184,10 +186,12 @@ function doScan() {
 function savecfg() {
     const nullpt = all("nullpoint").valueAsNumber;
     const trendsec = all("trendsec").valueAsNumber;
+    const flip = all("flip").checked;
     if (!isNaN(nullpt) && !isNaN(trendsec) ) {
         const f = new FormData();
         f.set("zeropt", nullpt*10);
         f.set("trend_sec", trendsec);
+        f.set("flip", flip?1:0);
         fetch("/config", {
             "method":"POST",
             "body": f
@@ -245,6 +249,9 @@ function savewifi() {
         </label>
         <label><span>Trend vzorků [s]</span>
             <input type="number" id="trendsec">
+        </label>
+        <label><span>Otočit display</span>
+            <input type="checkbox" id="flip" />
         </label>
         <div class="buttons"><button onclick="savecfg()">Nastavit</button></div>
     </div>            
